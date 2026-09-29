@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from i18n import ArgumentParser, run_cli, t
 
 
 def _ffmpeg_concat_copy(inputs: list[Path], output: Path) -> bool:
@@ -30,22 +31,22 @@ def _ffmpeg_concat_copy(inputs: list[Path], output: Path) -> bool:
         res = subprocess.run(
             [ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
              "-i", str(list_path), "-c", "copy", str(output)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
         )
         if res.returncode == 0:
-            print(f"  ffmpeg 无损拼接完成: {output}")
+            print(t('merge_copy', path=output))
             return True
-        print(f"  [warn] ffmpeg -c copy 失败，尝试重编码: {res.stderr.strip()[:200]}")
+        print(t('merge_retry', error=res.stderr.strip()[:200]))
         res = subprocess.run(
             [ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
              "-i", str(list_path), "-c:v", "libx264", "-crf", "20",
              "-pix_fmt", "yuv420p", "-vf", "scale='trunc(iw/2)*2':'trunc(ih/2)*2'", str(output)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
         )
         if res.returncode == 0:
-            print(f"  ffmpeg 重编码拼接完成: {output}")
+            print(t('merge_encoded', path=output))
             return True
-        print(f"  [warn] ffmpeg 重编码也失败: {res.stderr.strip()[:200]}")
+        print(t('merge_failed', error=res.stderr.strip()[:200]))
         return False
     finally:
         list_path.unlink(missing_ok=True)
@@ -79,12 +80,12 @@ def _pyav_concat(inputs: list[Path], output: Path) -> bool:
     for pkt in ostream.encode(None):
         out.mux(pkt)
     out.close()
-    print(f"  PyAV 拼接完成: {output}")
+    print(t('merge_av', path=output))
     return True
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(description="按顺序合并多幕白板动画 MP4")
+    p = ArgumentParser(argv=argv, description="按顺序合并多幕白板动画 MP4")
     p.add_argument("--inputs", nargs="+", required=True, help="按播放顺序的 MP4 列表")
     p.add_argument("--output", required=True, help="合并输出路径")
     args = p.parse_args(argv)
@@ -92,7 +93,7 @@ def main(argv=None) -> int:
     inputs = [Path(x) for x in args.inputs]
     missing = [str(x) for x in inputs if not x.exists()]
     if missing:
-        print(f"[err] 缺少输入文件: {', '.join(missing)}", file=sys.stderr)
+        print(t('missing_inputs', paths=', '.join(missing)), file=sys.stderr)
         return 1
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -100,9 +101,9 @@ def main(argv=None) -> int:
     if _ffmpeg_concat_copy(inputs, output) or _pyav_concat(inputs, output):
         print(f"OUTPUT={output.resolve()}")
         return 0
-    print("[err] 合并失败：系统无 ffmpeg 且 PyAV 不可用", file=sys.stderr)
+    print(t('no_merger'), file=sys.stderr)
     return 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli(main))

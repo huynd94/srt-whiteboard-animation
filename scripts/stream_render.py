@@ -24,8 +24,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-import cv2
-import numpy as np
+from i18n import ArgumentParser, run_cli, t
+
+_dependency_error = None
+try:
+    import cv2
+    import numpy as np
+except ImportError as error:
+    _dependency_error = error
+
+
+def require_dependencies():
+    if _dependency_error is not None:
+        raise ImportError(str(_dependency_error)) from _dependency_error
 
 # ──────────────────────────────────────────────────────────────
 # 资源定位
@@ -35,7 +46,7 @@ _ASSETS_DIR = _SCRIPT_DIR.parent / "assets"
 DEFAULT_HAND_PNG = _ASSETS_DIR / "drawing-hand.png"
 
 
-def _imread_any(path: str | Path, flags: int = cv2.IMREAD_COLOR) -> np.ndarray | None:
+def _imread_any(path: str | Path, flags: int = 1) -> np.ndarray | None:
     """
     读取图片，兼容含中文/空格等非 ASCII 字符的 Windows 路径。
     先用 np.fromfile 读字节，再交给 cv2.imdecode 解码，
@@ -100,7 +111,7 @@ class Config:
 def _hex_to_bgr(hex_color: str) -> np.ndarray:
     digits = hex_color.lstrip("#")
     if len(digits) != 6:
-        raise ValueError(f"非法颜色值: {hex_color}")
+        raise ValueError(t('bad_color', color=hex_color))
     r = int(digits[0:2], 16)
     g = int(digits[2:4], 16)
     b = int(digits[4:6], 16)
@@ -122,7 +133,7 @@ def _to_grid_blocks(image: np.ndarray, edge: int) -> np.ndarray:
     image = np.ascontiguousarray(image)
     h, w = image.shape[:2]
     if h % edge or w % edge:
-        raise ValueError(f"图像尺寸 {w}x{h} 必须是 {edge} 的整数倍")
+        raise ValueError(t('grid_size', w=w, h=h, edge=edge))
     rows, cols = h // edge, w // edge
     if image.ndim == 2:
         return image.reshape(rows, edge, cols, edge).transpose(0, 2, 1, 3)
@@ -1105,7 +1116,7 @@ class StreamBoardRenderer:
         skel = _zhang_suen_skeleton(self.ink_pixels, max_iterations=160)
         raw_strokes = trace_8connected(skel, min_points=cfg.skeleton_min_points)
         if not raw_strokes:
-            print("  [warn] 骨架追踪无笔画，回退到格中心路径")
+            print(t('no_skeleton'))
             return []
 
         spacing = cfg.skeleton_resample_spacing
@@ -1120,7 +1131,7 @@ class StreamBoardRenderer:
 
         processed = _order_skeleton_strokes(processed)
         total_pts = sum(len(s) for s in processed)
-        print(f"  骨架追踪: {len(processed)} 条笔画, {total_pts} 个采样点")
+        print(t('skeleton', count=len(processed), points=total_pts))
         return processed
 
     # ── contour-wipe 阻力场（懒构建，整个上色阶段复用）──
@@ -1328,7 +1339,7 @@ class StreamBoardRenderer:
         path = self.stroke_path
         n = len(path)
         if n == 0:
-            print("  无墨迹，跳过起笔段")
+            print(t('no_ink'))
             for _ in range(target_frames):
                 writer.write(self._snapshot_with_tip(self.out_w // 2, self.out_h // 2))
             return
@@ -1340,7 +1351,7 @@ class StreamBoardRenderer:
         # 模拟真人书写时的换笔/呼吸节奏。
         pause_frames = self._pause_frame_indices(target_frames, n)
         if pause_frames:
-            print(f"  自适应停顿: {len(pause_frames)} 帧冻结 (模式={self.cfg.pause_mode})")
+            print(t('pauses', count=len(pause_frames), mode=self.cfg.pause_mode))
 
         written = 0
         cells_revealed = 0  # 已整块揭示的格数（增量，严格跟随笔尖进度）
@@ -1352,7 +1363,7 @@ class StreamBoardRenderer:
                 writer.write(self._snapshot_with_tip(sx, sy))
                 written += 1
                 if (fi + 1) % max(1, target_frames // 10) == 0:
-                    print(f"  起笔进度: {int((fi + 1) / target_frames * 100)}%")
+                    print(t('ink_progress', percent=int((fi + 1) / target_frames * 100)))
                 continue
 
             # 笔尖沿线揭示（保留笔迹流动感）
@@ -1378,7 +1389,7 @@ class StreamBoardRenderer:
             written += 1
             last_sample_idx = si
             if (fi + 1) % max(1, target_frames // 10) == 0:
-                print(f"  起笔进度: {int((fi + 1) / target_frames * 100)}%")
+                print(t('ink_progress', percent=int((fi + 1) / target_frames * 100)))
 
         # 收尾兜底：确保所有格墨迹揭示完整，并补齐帧数
         while cells_revealed < n:
@@ -1388,7 +1399,7 @@ class StreamBoardRenderer:
         while written < target_frames:
             writer.write(self._snapshot_with_tip(*last))
             written += 1
-        print(f"  起笔完成: {n} 格, {written} 帧")
+        print(t('ink_done', count=n, frames=written))
 
     # ── skeleton 模式：沿骨架像素路径揭墨（笔尖走真实骨架）──
     def _lay_down_ink_skeleton(self, writer: cv2.VideoWriter, target_frames: int) -> None:
@@ -1411,7 +1422,7 @@ class StreamBoardRenderer:
 
         n = len(samples)
         if n == 0:
-            print("  无骨架笔画，跳过起笔段")
+            print(t('no_skeleton_phase'))
             for _ in range(target_frames):
                 writer.write(self._snapshot_with_tip(self.out_w // 2, self.out_h // 2))
             return
@@ -1421,7 +1432,7 @@ class StreamBoardRenderer:
         # 自适应停顿（用笔画数而非格数做密度判定）
         pause_frames = self._pause_frame_indices(target_frames, len(strokes))
         if pause_frames:
-            print(f"  自适应停顿: {len(pause_frames)} 帧冻结 (模式={self.cfg.pause_mode})")
+            print(t('pauses', count=len(pause_frames), mode=self.cfg.pause_mode))
 
         written = 0
         last_sample_idx: int | None = None
@@ -1433,7 +1444,7 @@ class StreamBoardRenderer:
                 writer.write(self._snapshot_with_tip(sx, sy))
                 written += 1
                 if (fi + 1) % report_step == 0:
-                    print(f"  起笔进度: {int((fi + 1) / target_frames * 100)}%")
+                    print(t('ink_progress', percent=int((fi + 1) / target_frames * 100)))
                 continue
 
             # 沿骨架揭墨：从上一帧采样点到当前帧采样点，逐段揭示原图墨迹
@@ -1450,14 +1461,14 @@ class StreamBoardRenderer:
             written += 1
             last_sample_idx = si
             if (fi + 1) % report_step == 0:
-                print(f"  起笔进度: {int((fi + 1) / target_frames * 100)}%")
+                print(t('ink_progress', percent=int((fi + 1) / target_frames * 100)))
 
         # 收尾兜底：补齐帧数
         last = samples[-1]
         while written < target_frames:
             writer.write(self._snapshot_with_tip(*last))
             written += 1
-        print(f"  起笔完成(骨架): {n} 采样点, {written} 帧")
+        print(t('skeleton_done', count=n, frames=written))
 
     # ── 添彩段入口：按 color_fill 分发到对应风格 ──
     def wash_color(self, writer: cv2.VideoWriter, target_frames: int) -> None:
@@ -1471,7 +1482,7 @@ class StreamBoardRenderer:
         n = len(path)
         disk = _feathered_disk(self.cfg.brush_radius)
         if n == 0:
-            print("  无墨迹，跳过添彩段")
+            print(t('no_color'))
             gaze = self.color_img
             for _ in range(target_frames):
                 writer.write(gaze)
@@ -1496,14 +1507,14 @@ class StreamBoardRenderer:
             written += 1
             last_cell_idx = ci
             if (fi + 1) % max(1, target_frames // 10) == 0:
-                print(f"  添彩进度: {int((fi + 1) / target_frames * 100)}%")
+                print(t('color_progress', percent=int((fi + 1) / target_frames * 100)))
 
         # 收尾兜底
         last = centers[-1]
         while written < target_frames:
             writer.write(self._snapshot_with_tip(*last))
             written += 1
-        print(f"  添彩完成: {n} 格, {written} 帧")
+        print(t('color_done', count=n, frames=written))
 
     # ── contour-wipe：轮廓感知自上而下扫描上色 ──
     def wash_color_contour(self, writer: cv2.VideoWriter, target_frames: int) -> None:
@@ -1516,7 +1527,7 @@ class StreamBoardRenderer:
         h, w = self.out_h, self.out_w
 
         if target_frames <= 0:
-            print("  无添彩帧，跳过 contour-wipe 段")
+            print(t('no_wipe'))
             return
 
         # 一次性预计算：阻力场、水波边界、扣减像素数、行坐标网格
@@ -1530,7 +1541,7 @@ class StreamBoardRenderer:
         # color_img 是揭示目标
         color_src = self.color_img.astype(np.float32)
 
-        print(f"  contour-wipe: {w}x{h}, delay_px={delay_px}, 趟数={blocks}")
+        print(t('wipe', w=w, h=h, delay=delay_px, blocks=blocks))
 
         written = 0
         # 揭示前沿从 -delay_px 扫到 h+delay_px，全程覆盖
@@ -1566,7 +1577,7 @@ class StreamBoardRenderer:
             writer.write(self._snapshot_with_tip(cursor_x, cursor_y))
             written += 1
             if (fi + 1) % report_step == 0:
-                print(f"  添彩进度(contour-wipe): {int((fi + 1) / target_frames * 100)}%")
+                print(t('wipe_progress', percent=int((fi + 1) / target_frames * 100)))
 
         # 收尾兜底：确保整图已揭示（最后一帧进度=1 时 lead≈h+delay_px，理论上全覆盖）
         full_reveal = np.ones((h, w), dtype=bool)
@@ -1575,7 +1586,7 @@ class StreamBoardRenderer:
         while written < target_frames:
             writer.write(last)
             written += 1
-        print(f"  contour-wipe 完成: {written} 帧")
+        print(t('wipe_done', frames=written))
 
     def render_to(self, raw_path: Path, total_ms: int) -> Path:
         cfg = self.cfg
@@ -1585,11 +1596,9 @@ class StreamBoardRenderer:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(str(raw_path), fourcc, cfg.fps, (self.out_w, self.out_h))
 
-        print(f"  墨流: {len(self.ink_streams)} 条, 墨迹格: {ink_cells}")
-        print(
-            f"  时长: {total_ms}ms -> 起笔 {plan.ink_frames}f / "
-            f"添彩 {plan.color_frames}f / 凝视 {plan.gaze_frames}f (权重 {plan.ratio_label})"
-        )
+        print(t('streams', count=len(self.ink_streams), cells=ink_cells))
+        print(t('phases', ms=total_ms, ink=plan.ink_frames, color=plan.color_frames,
+                gaze=plan.gaze_frames, ratio=plan.ratio_label))
 
         started = time.time()
         self.lay_down_ink(writer, plan.ink_frames)
@@ -1599,7 +1608,7 @@ class StreamBoardRenderer:
         for _ in range(plan.gaze_frames):
             writer.write(gaze_img)
         writer.release()
-        print(f"  渲染耗时: {time.time() - started:.1f}s")
+        print(t('elapsed', seconds=time.time() - started))
         return raw_path
 
 
@@ -1626,12 +1635,12 @@ def transcode_h264(src: Path, dst: Path) -> Path:
             "-pix_fmt", "yuv420p",
             str(dst),
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
         if res.returncode == 0:
             src.unlink(missing_ok=True)
-            print(f"  H.264 转码完成(ffmpeg): {dst}")
+            print(t('transcoded', backend='ffmpeg', path=dst))
             return dst
-        print(f"  [warn] ffmpeg 转码失败: {res.stderr.strip()}")
+        print(t('transcode_failed', backend='ffmpeg', error=res.stderr.strip()))
 
     # 路径2：PyAV（备选，纯 pip 安装）
     try:
@@ -1639,11 +1648,11 @@ def transcode_h264(src: Path, dst: Path) -> Path:
     except ImportError:
         pass
     except Exception as e:
-        print(f"  [warn] PyAV 转码失败: {e}")
+        print(t('transcode_failed', backend='PyAV', error=e))
 
     # 路径3：都没有，保留 mp4v
-    print(f"  [warn] 未找到 ffmpeg 和 PyAV，保留原始 mp4v 编码: {src}")
-    print(f"         安装任一即可获得 H.264: pip install av  或  安装系统 ffmpeg")
+    print(t('keep_mp4v', path=src))
+    print(t('h264_hint'))
     return src
 
 
@@ -1679,7 +1688,7 @@ def _transcode_with_pyav(src: Path, dst: Path) -> Path:
     output_container.close()
     input_container.close()
     src.unlink(missing_ok=True)
-    print(f"  H.264 转码完成(PyAV): {dst}")
+    print(t('transcoded', backend='PyAV', path=dst))
     return dst
 
 
@@ -1687,7 +1696,7 @@ def _transcode_with_pyav(src: Path, dst: Path) -> Path:
 # CLI
 # ──────────────────────────────────────────────────────────────
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(
+    p = ArgumentParser(argv=argv,
         description="把一张图片渲染成流式笔迹白板动画视频"
     )
     p.add_argument("image", help="输入图片路径 (PNG/JPG/JPEG/BMP/TIFF)")
@@ -1753,15 +1762,16 @@ def _build_cfg(args: argparse.Namespace) -> Config:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    require_dependencies()
     cfg = _build_cfg(args)
 
     print("=" * 56)
-    print("流式笔迹动画渲染器")
+    print(t('renderer'))
     print("=" * 56)
 
     image_bgr = _imread_any(args.image)
     if image_bgr is None:
-        print(f"[err] 无法读取图片: {args.image}")
+        print(t('read_image', path=args.image))
         return 1
 
     out_dir = Path(args.out_dir)
@@ -1772,21 +1782,21 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     pen_png = Path(args.pen_image) if args.pen_image else None
     renderer = StreamBoardRenderer(image_bgr, cfg, pen_png, args.bare_tip)
-    print(f"  输入: {args.image}")
-    print(f"  输出尺寸: {renderer.out_w}x{renderer.out_h}, 帧率: {cfg.fps}")
+    print(t('input', path=args.image))
+    print(t('dimensions', w=renderer.out_w, h=renderer.out_h, fps=cfg.fps))
 
     renderer.render_to(raw_path, args.total_ms)
     final = transcode_h264(raw_path, h264_path)
 
     size_mb = final.stat().st_size / (1024 * 1024)
-    print(f"\n最终视频: {final}")
-    print(f"  文件大小: {size_mb:.2f} MB")
+    print(t('final', path=final))
+    print(t('size', size=size_mb))
     print("=" * 56)
-    print("完成")
+    print(t('done'))
     # 末行输出最终路径，便于上层捕获
     print(f"OUTPUT={final}")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli(main))

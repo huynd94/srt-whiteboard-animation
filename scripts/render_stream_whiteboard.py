@@ -27,13 +27,15 @@ import math
 import sys
 from pathlib import Path
 
-import cv2
-import numpy as np
+from i18n import ArgumentParser, run_cli, t
 
 # 复用 stream 渲染器的全部构件（同目录）
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 import stream_render as sr  # noqa: E402
+
+if sr._dependency_error is None:
+    cv2, np = sr.cv2, sr.np
 
 DEFAULT_HAND = _SCRIPT_DIR.parent / "assets" / "drawing-hand.png"
 
@@ -352,7 +354,7 @@ class RegionStreamRenderer:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(str(raw_path), fourcc, cfg.fps, (self.out_w, self.out_h))
         if not writer.isOpened():
-            raise RuntimeError("无法打开视频写入器")
+            raise RuntimeError(t('writer'))
 
         weight_sum = cfg.ink_weight + cfg.color_weight
         cur_ms = 0.0
@@ -455,7 +457,7 @@ class RegionStreamRenderer:
 
 
 def _parse_args(argv=None):
-    p = argparse.ArgumentParser(description="SRT 白板动画整合渲染器（mask 编排 + stream 画法）")
+    p = ArgumentParser(argv=argv, description="SRT 白板动画整合渲染器（mask 编排 + stream 画法）")
     p.add_argument("image", help="线稿图路径")
     p.add_argument("annotation", help="同名 annotation.json 路径")
     p.add_argument("output", help="输出 MP4 路径")
@@ -468,9 +470,9 @@ def _parse_args(argv=None):
                    help="上色: contour-wipe 轮廓扫描(默认); brush 沿轨迹刷")
     p.add_argument("--pause", default="heavy", choices=["heavy", "auto", "light", "off"],
                    help="起笔段停顿节奏（预留，逐区域画法下影响较弱）")
-    p.add_argument("--fps", type=int, default=None)
-    p.add_argument("--grid-edge", type=int, default=None)
-    p.add_argument("--brush-radius", type=int, default=None)
+    p.add_argument("--fps", type=int, default=None, help="覆盖默认帧率")
+    p.add_argument("--grid-edge", type=int, default=None, help="覆盖默认网格边长")
+    p.add_argument("--brush-radius", type=int, default=None, help="覆盖默认墨刷半径")
     p.add_argument("--cap-long-edge", type=int, default=None,
                    help="输出长边像素上限（预览可调小加速，默认 1080）")
     return p.parse_args(argv)
@@ -494,23 +496,24 @@ def _build_cfg(args) -> sr.Config:
 
 def main(argv=None) -> int:
     args = _parse_args(argv)
+    sr.require_dependencies()
     cfg = _build_cfg(args)
 
     print("=" * 56)
-    print("SRT 白板动画整合渲染器 (mask 编排 + stream 画法)")
+    print(t('SRT 白板动画整合渲染器（mask 编排 + stream 画法）'))
     print("=" * 56)
 
     image_bgr = sr._imread_any(args.image)
     if image_bgr is None:
-        print(f"[err] 无法读取图片: {args.image}")
+        print(t('read_image', path=args.image))
         return 1
     try:
-        annotation = json.loads(Path(args.annotation).read_text(encoding="utf-8"))
+        annotation = json.loads(Path(args.annotation).read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as e:
-        print(f"[err] 无法读取标注: {e}")
+        print(t('read_annotation', error=e))
         return 1
     if not annotation.get("elements"):
-        print("[err] 标注中没有 elements")
+        print(t('no_elements'))
         return 1
 
     total_ms = args.total_ms if args.total_ms is not None else annotation.get("sceneDurationMs")
@@ -524,20 +527,20 @@ def main(argv=None) -> int:
 
     hand_png = Path(args.hand) if args.hand else None
     renderer = RegionStreamRenderer(image_bgr, annotation, cfg, hand_png, args.bare_tip)
-    print(f"  输入: {args.image}")
-    print(f"  输出尺寸: {renderer.out_w}x{renderer.out_h}, 帧率: {cfg.fps}")
-    print(f"  区域数: {len(annotation['elements'])}, 总时长: {total_ms}ms, "
-          f"笔迹: {cfg.ink_path_mode}, 上色: {cfg.color_fill}")
+    print(t('input', path=args.image))
+    print(t('dimensions', w=renderer.out_w, h=renderer.out_h, fps=cfg.fps))
+    print(t('regions', count=len(annotation['elements']), ms=total_ms,
+            ink=cfg.ink_path_mode, color=cfg.color_fill))
 
     renderer.render_to(raw_path, total_ms)
     final = sr.transcode_h264(raw_path, out_path)
 
     size_mb = final.stat().st_size / (1024 * 1024)
-    print(f"\n最终视频: {final}  ({size_mb:.2f} MB)")
+    print(t('final', path=final) + f"  ({size_mb:.2f} MB)")
     print("=" * 56)
     print(f"OUTPUT={final}")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli(main))

@@ -1,12 +1,14 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="vi">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SRT 白板动画 · 区域编辑器（无需服务器）</title>
+<title>Hoạt hình bảng trắng SRT · Trình chỉnh sửa vùng (không cần máy chủ)</title>
 <style>
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #14161a; color: #e6e8ec; }
+  @font-face { font-family: "Noto Sans"; src: url('./fonts/NotoSans-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+  html, body { margin: 0; height: 100%; font-family: "Noto Sans", "Segoe UI", sans-serif; background: #14161a; color: #e6e8ec; }
+  button, input, select, textarea { font-family: inherit; }
   body { display: flex; flex-direction: column; height: 100vh; }
   .muted { color: #8b929c; font-size: 12px; }
   .topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #1c1f26; border-bottom: 1px solid #2a2e37; flex-wrap: wrap; }
@@ -61,70 +63,69 @@
 </head>
 <body>
 <div class="topbar">
-  <div class="brand">SRT 白板 · 区域编辑器</div>
-  <button id="openBtn" class="primary">打开文件夹…</button>
-  <button id="prevBtn" disabled>‹</button>
-  <select id="sceneSel" disabled></select>
-  <button id="nextBtn" disabled>›</button>
+  <div class="brand" data-i18n="brand"></div>
+  <button id="openBtn" class="primary" data-i18n="open"></button>
+  <button id="prevBtn" data-i18n-aria-label="previous" data-i18n-title="previous" disabled>‹</button>
+  <select id="sceneSel" data-i18n-aria-label="scene" disabled></select>
+  <button id="nextBtn" data-i18n-aria-label="next" data-i18n-title="next" disabled>›</button>
   <span id="sceneCount" class="muted"></span>
-  <label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="overlayToggle" checked> 区域框</label>
+  <label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="overlayToggle" checked> <span data-i18n="overlay"></span></label>
+  <label for="languageSel" class="muted" data-i18n="language"></label>
+  <select id="languageSel"><option value="vi" lang="vi">Tiếng Việt</option><option value="en" lang="en">English</option></select>
   <span class="spacer"></span>
   <span id="dirtyFlag" class="dirty"></span>
-  <button id="saveBtn" disabled>保存本场景</button>
-  <button id="saveAllBtn" class="primary" disabled>全部保存</button>
+  <button id="saveBtn" data-i18n="save" disabled></button>
+  <button id="saveAllBtn" class="primary" data-i18n="saveAll" disabled></button>
 </div>
 
 <div class="body">
   <div class="stage-wrap">
-    <div id="hint" class="hint">
-      点 <b>打开文件夹…</b> 选择存放线稿的目录（内含成对的 <code>&lt;名称&gt;.png</code> + <code>&lt;名称&gt;.annotation.json</code>）。<br><br>
-      载入后：默认显示完整图片和区域框；拖动方框整体移动、拖四角/四边缩放调 <code>region</code>；右侧精确改数值、方向、<b>开始/结束时间</b>与<b>字幕</b>；拖动模块列表可<b>调整顺序</b>。拖时间轴或按播放看<b>矩形代理揭示</b>（未开始区域不显示）。<br><br>
-      改完点 <b>保存本场景</b> / <b>全部保存</b> 写回原 <code>.annotation.json</code>（含每个区域的字幕）。<br>
-      <span class="muted">写回原文件需 Chrome / Edge（File System Access API）；其它浏览器将改为下载，请手动覆盖原文件。矩形代理只用于布局/时序；真实连续笔迹请用命令行 <code>render_stream_whiteboard.py</code> 渲染。</span>
-    </div>
-    <canvas id="canvas" hidden></canvas>
+    <div id="hint" class="hint" data-i18n-html="hint"></div>
+    <canvas id="canvas" data-i18n-aria-label="canvas" hidden></canvas>
   </div>
   <aside class="side" id="side" hidden>
-    <h3>绘制模块 <span id="elemCount" class="muted"></span></h3>
-    <p class="tip muted">拖动列表项可调整绘制顺序</p>
+    <h3><span data-i18n="modules"></span> <span id="elemCount" class="muted"></span></h3>
+    <p class="tip muted" data-i18n="reorder"></p>
     <ul id="elist" class="elist"></ul>
     <div class="row-btns">
-      <button id="addBtn">＋ 新增模块</button>
-      <button id="delBtn" disabled>删除选中</button>
+      <button id="addBtn" data-i18n="add"></button>
+      <button id="delBtn" data-i18n="delete" disabled></button>
     </div>
-    <h3>选中模块</h3>
+    <h3 data-i18n="selected"></h3>
     <div class="fields" id="fields">
-      <label>名称</label><input type="text" id="f_label" disabled>
-      <label>x</label><input type="number" id="f_x" min="0" disabled>
-      <label>y</label><input type="number" id="f_y" min="0" disabled>
-      <label>宽</label><input type="number" id="f_w" min="1" disabled>
-      <label>高</label><input type="number" id="f_h" min="1" disabled>
-      <label>方向</label>
+      <label for="f_label" data-i18n="label"></label><input type="text" id="f_label" disabled>
+      <label for="f_x" data-i18n="x"></label><input type="number" id="f_x" min="0" disabled>
+      <label for="f_y" data-i18n="y"></label><input type="number" id="f_y" min="0" disabled>
+      <label for="f_w" data-i18n="width"></label><input type="number" id="f_w" min="1" disabled>
+      <label for="f_h" data-i18n="height"></label><input type="number" id="f_h" min="1" disabled>
+      <label for="f_dir" data-i18n="direction"></label>
       <select id="f_dir" disabled>
-        <option value="top_to_bottom">从上至下</option>
-        <option value="bottom_to_top">从下至上</option>
-        <option value="left_to_right">从左至右</option>
-        <option value="right_to_left">从右至左</option>
+        <option value="top_to_bottom" data-i18n="top_to_bottom"></option>
+        <option value="bottom_to_top" data-i18n="bottom_to_top"></option>
+        <option value="left_to_right" data-i18n="left_to_right"></option>
+        <option value="right_to_left" data-i18n="right_to_left"></option>
       </select>
-      <label>开始(ms)</label><input type="number" id="f_start" min="0" step="100" disabled>
-      <label>结束(ms)</label><input type="number" id="f_end" min="0" step="100" disabled>
-      <label>时长(ms)</label><input type="number" id="f_dur" disabled>
+      <label for="f_start" data-i18n="start"></label><input type="number" id="f_start" min="0" step="100" disabled>
+      <label for="f_end" data-i18n="end"></label><input type="number" id="f_end" min="0" step="100" disabled>
+      <label for="f_dur" data-i18n="duration"></label><input type="number" id="f_dur" disabled>
     </div>
-    <h3>字幕</h3>
-    <textarea id="f_sub" rows="3" placeholder="该区域对应的字幕（保存进 annotation.json）" disabled></textarea>
+    <h3><label for="f_sub" data-i18n="subtitles"></label></h3>
+    <textarea id="f_sub" rows="3" data-i18n-placeholder="subtitlePlaceholder" disabled></textarea>
     <ul id="sublist" class="sublist"></ul>
   </aside>
 </div>
 
 <div class="controls">
-  <button id="playBtn" class="play" disabled>▶</button>
-  <input type="range" id="timeline" min="0" max="1000" value="0" disabled>
+  <button id="playBtn" class="play" data-i18n-aria-label="play" data-i18n-title="play" disabled>▶</button>
+  <input type="range" id="timeline" data-i18n-aria-label="timeline" min="0" max="1000" value="0" disabled>
   <span id="tlabel" class="tlabel">0.00s / 0.00s</span>
 </div>
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+<script src="./i18n.js"></script>
 <script>
 const $ = id => document.getElementById(id);
+const i18n = window.previewI18n, t = i18n.t;
 const canFS = 'showDirectoryPicker' in window;
 const IMG_EXT = ['.png', '.jpg', '.jpeg'];
 const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
@@ -156,7 +157,7 @@ async function openDir() {
       for await (const [name, h] of dir.entries()) if (h.kind === 'file') handles[name] = h;
       await loadPairs(Object.keys(handles), n => handles[n].getFile(), n => handles[n]);
     } else { fi.click(); }
-  } catch (e) { if (e && e.name !== 'AbortError') toast('打开失败：' + e.message, true); }
+  } catch (e) { if (e && e.name !== 'AbortError') toast('openFailed', { error: e.message || t('unknownError') }, true); }
 }
 const fi = document.createElement('input');
 fi.type = 'file'; fi.webkitdirectory = true; fi.multiple = true; fi.hidden = true;
@@ -177,21 +178,20 @@ async function loadPairs(names, getFile, getHandle) {
     let cfg = null, cfgHandle = null;
     if (names.includes(cfgName)) {
       try { cfg = JSON.parse(await (await getFile(cfgName)).text()); }
-      catch (e) { toast(`跳过 ${cfgName}：JSON 解析失败`, true); }
+      catch (e) { toast('invalidJson', { name: cfgName }, true); }
       cfgHandle = getHandle(cfgName);
     }
     const url = URL.createObjectURL(await getFile(inm));
     scenes.push({ name: base, imgName: inm, cfgName, cfg, cfgHandle, imgUrl: url, hasConfig: !!cfg });
   }
-  if (!scenes.length) { toast('目录里没有图片', true); return; }
+  if (!scenes.length) { toast('noImages', {}, true); return; }
   S.scenes = scenes; S.dirty.clear();
   const sel = $('sceneSel');
-  sel.innerHTML = scenes.map((s, i) => `<option value="${i}">${i+1}. ${s.name}${s.hasConfig ? '' : '（未标注）'}</option>`).join('');
+  renderScenes();
   sel.disabled = $('prevBtn').disabled = $('nextBtn').disabled = false;
-  $('sceneCount').textContent = `共 ${scenes.length} 张（${scenes.filter(s=>s.hasConfig).length} 张带标注）`;
   $('hint').hidden = true; canvas.hidden = false; $('side').hidden = false;
   $('playBtn').disabled = $('timeline').disabled = false;
-  if (!canFS) toast('当前浏览器不支持直接写回，保存将改为下载', false);
+  if (!canFS) toast('downloadFallback');
   loadScene(0);
 }
 
@@ -214,7 +214,7 @@ function loadScene(i) {
     samplePaper();
     updateSaveBtns(); syncEditor(); renderList(); renderSubs(); setTime(0); // 默认停在 0（未播放）→ 显示完整图片
   };
-  img.onerror = () => toast('图片加载失败：' + sc.imgName, true);
+  img.onerror = () => toast('imageFailed', { name: sc.imgName }, true);
   img.src = sc.imgUrl;
 }
 function samplePaper() {
@@ -292,7 +292,7 @@ function drawOverlay() {
     ctx.fillRect(r.x, r.y, r.width, r.height); ctx.strokeRect(r.x, r.y, r.width, r.height); ctx.setLineDash([]);
     ctx.fillStyle = focus ? '#3b82f6' : '#e97036';
     ctx.beginPath(); ctx.arc(r.x+18, r.y+18, 15, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px "Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px "Noto Sans", "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(i+1, r.x+18, r.y+18);
     if (focus) {
       ctx.fillStyle = '#fff'; ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3;
@@ -306,9 +306,9 @@ function drawOverlay() {
 function selectElem(i) { S.sel = i; syncEditor(); renderList(); renderSubs(); render(); }
 function renderList() {
   const arr = els();
-  $('elemCount').textContent = `共 ${arr.length} 个`;
+  $('elemCount').textContent = t('elementCount', { count: arr.length });
   $('elist').innerHTML = arr.map((e, i) =>
-    `<li draggable="true" data-i="${i}" class="${i===S.sel?'sel':''}"><span class="grip">⋮⋮</span><span class="o">#${i+1}</span><span class="t">${(e.reveal.startMs/1000).toFixed(1)}s</span><span class="nm">${escapeHtml(e.label || '')}</span></li>`
+    `<li draggable="true" data-i="${i}" class="${i===S.sel?'sel':''}"><span class="grip">⋮⋮</span><span class="o">#${i+1}</span><span class="t">${t('seconds', { value: (e.reveal.startMs/1000).toFixed(1) })}</span><span class="nm">${escapeHtml(e.label || '')}</span></li>`
   ).join('');
   $('elist').querySelectorAll('li').forEach(li => {
     const i = +li.dataset.i;
@@ -332,7 +332,7 @@ function renderSubs() {
   const arr = els();
   $('sublist').innerHTML = arr.map((e, i) => {
     const txt = (e.subtitle || '').trim();
-    return `<li data-i="${i}" class="${i===S.sel?'sel':''} ${txt?'':'empty'}"><span class="o">#${i+1}</span><span class="s">${txt ? escapeHtml(txt) : '（无字幕）'}</span></li>`;
+    return `<li data-i="${i}" class="${i===S.sel?'sel':''} ${txt?'':'empty'}"><span class="o">#${i+1}</span><span class="s">${txt ? escapeHtml(txt) : t('noSubtitle')}</span></li>`;
   }).join('');
   $('sublist').querySelectorAll('li').forEach(li => li.addEventListener('click', () => selectElem(+li.dataset.i)));
 }
@@ -381,7 +381,7 @@ $('addBtn').addEventListener('click', () => {
   const arr = els(), W = S.cfg.canvas.width, H = S.cfg.canvas.height;
   const seq = arr.length + 1;
   const lastEnd = arr.length ? Math.max(...arr.map(endMs)) : 300;
-  const e = { id: `region_${seq}`, label: '新模块', sequence: seq, narrativeRole: '', type: 'object', subtitle: '',
+  const e = { id: `region_${seq}`, label: t('newRegion'), sequence: seq, narrativeRole: '', type: 'object', subtitle: '',
     region: { x: Math.round(W*0.1), y: Math.round(H*0.1), width: Math.round(W*0.25), height: Math.round(H*0.3) },
     reveal: { direction: 'top_to_bottom', startMs: lastEnd + 200, durationMs: 2000, maskPaddingPx: 22, protectedRegions: [] },
     handPath: {} };
@@ -428,18 +428,18 @@ function setTime(v) {
   const dur = totalMs();
   S.time = clamp(v, 0, dur);
   $('timeline').value = dur ? Math.round(S.time/dur*1000) : 0;
-  $('tlabel').textContent = `${(S.time/1000).toFixed(2)}s / ${(dur/1000).toFixed(2)}s`;
+  renderTimeLabel();
   render();
 }
 $('timeline').addEventListener('input', e => { pause(); setTime((+e.target.value)/1000 * totalMs()); });
 $('playBtn').addEventListener('click', () => S.playing ? pause() : play());
-function play() { if (!S.cfg) return; if (S.time >= totalMs()) S.time = 0; S.playing = true; $('playBtn').textContent = '⏸'; S.last = performance.now(); requestAnimationFrame(tick); }
-function pause() { S.playing = false; $('playBtn').textContent = '▶'; }
+function play() { if (!S.cfg) return; if (S.time >= totalMs()) S.time = 0; S.playing = true; renderPlayButton(); S.last = performance.now(); requestAnimationFrame(tick); }
+function pause() { S.playing = false; renderPlayButton(); }
 function tick(ts) { if (!S.playing) return; setTime(S.time + (ts - S.last)); S.last = ts; if (S.time >= totalMs()) { pause(); return; } requestAnimationFrame(tick); }
 
 // ---------- 保存 ----------
-function markDirty() { S.dirty.add(S.idx); $('dirtyFlag').textContent = '● 未保存'; updateSaveBtns(); }
-function updateSaveBtns() { $('saveBtn').disabled = !S.dirty.has(S.idx); $('saveAllBtn').disabled = S.dirty.size === 0; }
+function markDirty() { S.dirty.add(S.idx); updateSaveBtns(); }
+function updateSaveBtns() { $('saveBtn').disabled = !S.dirty.has(S.idx); $('saveAllBtn').disabled = S.dirty.size === 0; $('dirtyFlag').textContent = S.dirty.size ? t('unsaved') : ''; }
 $('saveBtn').addEventListener('click', () => saveScene(S.idx));
 $('saveAllBtn').addEventListener('click', async () => { for (const i of [...S.dirty]) await saveScene(i); });
 async function saveScene(i) {
@@ -451,13 +451,13 @@ async function saveScene(i) {
     let handle = sc.cfgHandle;
     if (!handle && S.dirHandle && S.dirHandle.getFileHandle) handle = await S.dirHandle.getFileHandle(sc.cfgName, { create: true });
     if (handle && handle.createWritable) {
-      if (handle.requestPermission) { const perm = await handle.requestPermission({ mode: 'readwrite' }); if (perm !== 'granted') throw new Error('未授权写入'); }
+      if (handle.requestPermission) { const perm = await handle.requestPermission({ mode: 'readwrite' }); if (perm !== 'granted') { const error = new Error(); error.i18nKey = 'writeDenied'; throw error; } }
       const w = await handle.createWritable(); await w.write(text); await w.close();
       sc.cfgHandle = handle; sc.hasConfig = true;
     } else { downloadText(sc.cfgName, text); }
     S.dirty.delete(i); if (i === S.idx) $('dirtyFlag').textContent = '';
-    updateSaveBtns(); toast(`已保存：${sc.name}`);
-  } catch (e) { toast(`保存失败：${e.message}`, true); }
+    updateSaveBtns(); renderScenes(); toast('saved', { name: sc.name });
+  } catch (e) { toast('saveFailed', { error: e.message || t('unknownError') }, true, e.i18nKey); }
 }
 function downloadText(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; a.click(); URL.revokeObjectURL(a.href); }
 
@@ -470,9 +470,49 @@ document.addEventListener('keydown', e => {
   else if (e.code === 'Delete' && els()[S.sel]) $('delBtn').click();
 });
 window.addEventListener('beforeunload', e => { if (S.dirty.size) { e.preventDefault(); e.returnValue = ''; } });
-let toastTimer;
-function toast(msg, err) { const t = $('toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 2400); }
+let toastTimer, toastState;
+function renderToast() {
+  if (!toastState) return;
+  const { key, values, errorKey } = toastState;
+  $('toast').textContent = t(key, errorKey ? { ...values, error: t(errorKey) } : values);
+}
+function toast(key, values = {}, err = false, errorKey) {
+  toastState = { key, values, errorKey }; renderToast();
+  const el = $('toast'); el.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.className = 'toast'; toastState = null; }, 2400);
+}
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderScenes() {
+  const select = $('sceneSel'), value = select.value;
+  // Update option text in place so switching languages does not change selection.
+  if (select.options.length !== S.scenes.length) {
+    select.replaceChildren(...S.scenes.map((scene, i) => new Option('', String(i))));
+  }
+  S.scenes.forEach((scene, i) => { select.options[i].textContent = `${i+1}. ${scene.name}${scene.hasConfig ? '' : t('unannotated')}`; });
+  if (value !== '') select.value = value;
+  $('sceneCount').textContent = S.scenes.length ? t('sceneCount', { count: S.scenes.length, annotated: S.scenes.filter(scene => scene.hasConfig).length }) : '';
+}
+function renderPlayButton() {
+  const button = $('playBtn'), key = S.playing ? 'pause' : 'play';
+  button.textContent = S.playing ? '⏸' : '▶';
+  button.dataset.i18nAriaLabel = button.dataset.i18nTitle = key;
+  button.setAttribute('aria-label', t(key)); button.title = t(key);
+}
+function renderTimeLabel() {
+  $('tlabel').textContent = t('time', { current: (S.time/1000).toFixed(2), total: (S.cfg ? totalMs()/1000 : 0).toFixed(2) });
+}
+function applyLanguage() {
+  i18n.apply(); $('languageSel').value = i18n.language;
+  // Never sync editor values, load a scene, or restart playback here.
+  renderScenes(); renderList(); renderSubs(); updateSaveBtns();
+  renderPlayButton(); renderTimeLabel(); renderToast(); render();
+}
+$('languageSel').addEventListener('change', event => { i18n.setLanguage(event.target.value); applyLanguage(); });
+applyLanguage();
+if (document.fonts) {
+  document.fonts.load('18px "Noto Sans"').then(() => document.fonts.ready).then(() => render()).catch(() => { /* Fallback font remains usable. */ });
+}
 </script>
 </body>
 </html>

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import venv
 from pathlib import Path
+from i18n import ArgumentParser, run_cli, t
 
 # skill 根目录 = 本脚本向上两级
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -43,16 +44,16 @@ def interpreter_path() -> Path:
 def ensure_venv(check_only: bool) -> Path:
     py = interpreter_path()
     if VENV_ROOT.exists() and py.exists():
-        print(f"[ok] 复用现有虚拟环境: {VENV_ROOT}")
+        print(t('reuse_env', path=VENV_ROOT))
         return py
 
     if check_only:
-        print(f"[err] 虚拟环境尚未建立: {VENV_ROOT}")
+        print(t('no_env', path=VENV_ROOT))
         sys.exit(1)
 
-    print(f"[..] 建立虚拟环境: {VENV_ROOT}")
+    print(t('create_env', path=VENV_ROOT))
     venv.create(str(VENV_ROOT), with_pip=True)
-    print("[ok] 虚拟环境就绪")
+    print(t('env_ready'))
     return py
 
 
@@ -67,21 +68,24 @@ def can_import(py: Path, import_name: str) -> bool:
 def install(py: Path, packages: list[str]) -> bool:
     if not packages:
         return True
-    print(f"[..] 安装依赖: {', '.join(packages)}")
+    print(t('install', packages=', '.join(packages)))
     res = subprocess.run(
         [str(py), "-m", "pip", "install", "--quiet", *packages],
         capture_output=True,
         text=True,
+        encoding='utf-8', errors='replace',
     )
     if res.returncode != 0:
-        print(f"[err] 安装失败:\n{res.stderr}")
+        print(t('install_failed', error=res.stderr))
         return False
-    print("[ok] 依赖安装完成")
+    print(t('installed'))
     return True
 
 
-def main() -> None:
-    check_only = "--check" in sys.argv
+def main(argv=None) -> None:
+    parser = ArgumentParser(argv=argv, description='prepare')
+    parser.add_argument('--check', action='store_true', help='check')
+    check_only = parser.parse_args(argv).check
 
     py = ensure_venv(check_only)
 
@@ -95,7 +99,7 @@ def main() -> None:
 
     if missing:
         if check_only:
-            print(f"\n缺 {len(missing)} 个依赖: {', '.join(missing)}")
+            print(t('missing_deps', count=len(missing), packages=', '.join(missing)))
             sys.exit(1)
         if not install(py, missing):
             sys.exit(1)
@@ -105,4 +109,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(run_cli(main))
